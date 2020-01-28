@@ -12,6 +12,7 @@ HELM_VERSION := 2.16.0
 
 include docker/kubectl.version
 include docker/kustomize.version
+include docker/kapp.version
 include docker/sops.version
 
 # NB default target architecture is amd64. If you would like to try the
@@ -54,12 +55,12 @@ release-bins: $(GENERATED_TEMPLATES_FILE)
 clean:
 	go clean
 	rm -rf ./build
-	rm -f test/bin/kubectl test/bin/helm test/bin/kind test/bin/sops test/bin/kustomize
+	rm -f test/bin/kubectl test/bin/helm test/bin/kind test/bin/sops test/bin/kustomize test/bin/kapp
 
 realclean: clean
 	rm -rf ./cache
 
-test: test/bin/helm test/bin/kubectl test/bin/sops test/bin/kustomize $(GENERATED_TEMPLATES_FILE)
+test: test/bin/helm test/bin/kubectl test/bin/sops test/bin/kustomize test/bin/kapp $(GENERATED_TEMPLATES_FILE)
 	PATH="${PWD}/bin:${PWD}/test/bin:${PATH}" go test ${TEST_FLAGS} $(shell go list ./... | sort -u)
 
 e2e: lint-e2e test/bin/helm test/bin/kubectl test/bin/sops test/bin/crane test/e2e/bats $(GOBIN)/fluxctl build/.flux.done
@@ -86,7 +87,7 @@ build/.%.done: docker/Dockerfile.%
 		-f build/docker/$*/Dockerfile.$* ./build/docker/$*
 	touch $@
 
-build/.flux.done: build/fluxd build/kubectl build/sops build/kustomize docker/ssh_config docker/kubeconfig docker/known_hosts.sh
+build/.flux.done: build/fluxd build/kubectl build/sops build/kustomize build/kapp docker/ssh_config docker/kubeconfig docker/known_hosts.sh
 
 build/fluxd: $(FLUXD_DEPS)
 build/fluxd: cmd/fluxd/*.go
@@ -97,13 +98,15 @@ test/bin/kubectl: cache/$(CURRENT_OS_ARCH)/kubectl-$(KUBECTL_VERSION)
 build/helm: cache/linux-$(ARCH)/helm-$(HELM_VERSION)
 test/bin/helm: cache/$(CURRENT_OS_ARCH)/helm-$(HELM_VERSION)
 build/kustomize: cache/linux-amd64/kustomize-$(KUSTOMIZE_VERSION)
+build/kapp: cache/linux-amd64/kapp-$(KAPP_VERSION)
 build/sops: cache/linux-amd64/sops-$(SOPS_VERSION)
 test/bin/kustomize: cache/$(CURRENT_OS_ARCH)/kustomize-$(KUSTOMIZE_VERSION)
+test/bin/kapp: cache/$(CURRENT_OS_ARCH)/kapp-$(KAPP_VERSION)
 test/bin/shellcheck: cache/$(CURRENT_OS_ARCH)/shellcheck-$(SHELLCHECK_VERSION)
 test/bin/shfmt: cache/$(CURRENT_OS_ARCH)/shfmt-$(SHFMT_VERSION)
 test/bin/sops: cache/$(CURRENT_OS_ARCH)/sops-$(SOPS_VERSION)
 
-build/kubectl test/bin/kubectl build/kustomize test/bin/kustomize build/helm test/bin/helm test/bin/shellcheck test/bin/shfmt build/sops test/bin/sops:
+build/kubectl test/bin/kubectl build/kustomize test/bin/kustomize build/kapp test/bin/kapp build/helm test/bin/helm test/bin/shellcheck test/bin/shfmt build/sops test/bin/sops:
 	mkdir -p $(@D)
 	cp $< $@
 	if [ `basename $@` = "build" -a $(CURRENT_OS_ARCH) = "linux-$(ARCH)" ]; then strip $@; fi
@@ -122,6 +125,11 @@ cache/%/kustomize-$(KUSTOMIZE_VERSION): docker/kustomize.version
 	echo "$(KUSTOMIZE_CHECKSUM)  cache/$*/kustomize-$(KUSTOMIZE_VERSION).tar.gz" | shasum -a 256 -c
 	tar -m -C ./cache -xzf cache/$*/kustomize-$(KUSTOMIZE_VERSION).tar.gz kustomize
 	mv cache/kustomize $@
+
+cache/%/kapp-$(KAPP_VERSION): docker/kapp.version
+	mkdir -p cache/$*
+	curl --fail -L -o $@ "https://github.com/k14s/kapp/releases/download/v$(KAPP_VERSION)/kapp-$*"
+	[ $* != "linux-amd64" ] || echo "$(KAPP_CHECKSUM)  $@" | shasum -a 256 -c
 
 cache/%/helm-$(HELM_VERSION):
 	mkdir -p cache/$*
